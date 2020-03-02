@@ -19,6 +19,9 @@ inputs:
   asset_name:
     description: 'Name of the file to upload with a $$ placeholder to insert date and hash into'
     required: true
+  assets_names_regex:
+    description: 'Regex for assets names recognition (Metacharacter has to be double backslashed, e.g. "pattern \\d+ with at least one number in the middle")'
+    required: false
   asset_content_type:
     description: 'Content type of the uploaded file'
     required: true

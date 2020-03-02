@@ -8,12 +8,81 @@ const core = require("@actions/core");
 const { GitHub } = require("@actions/github");
 const fs = require("fs");
 
-/**
- * 
- * @param {GitHub} github 
- * @param {*} name 
- */
-async function uploadAsset(github, name) {
+
+async function listAssetsSortedByDate(github, owner, repo) {
+	const releaseId = core.getInput("release_id", { required: true });
+
+	let assets = await github.repos.listAssetsForRelease({
+		owner: owner,
+		repo: repo,
+		release_id: parseInt(releaseId),
+		per_page: 100
+	});
+
+	assets.data.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+	return assets;
+}
+
+function findToBeDeletedAssets(assets, assetName, commitHash) {
+	const maxReleases = parseInt(core.getInput("max_releases", { required: false }));
+	let assetsNamesRegex = core.getInput("assets_names_regex", { required: false });
+	var regExp = assetsNamesRegex && new RegExp(assetsNamesRegex);
+
+	const placeholderStart = assetName.indexOf("$$");
+	const nameStart = assetName.substr(0, placeholderStart);
+	const nameEnd = assetName.substr(placeholderStart + 2);
+
+	let filteredAssets = {
+		toBeDeletedAssetsIds: [],
+		existingAssetNameId: undefined,
+		isCurrentCommitAlreadyReleased: false
+	};
+
+	let numFound = 0;
+	for (let i = 0; i < assets.data.length; i++) {
+		const asset = assets.data[i];
+		if (asset.name == assetName) {
+			// Not allowed to upload already existing name of asset (not commit hash or date in filename)
+			filteredAssets.existingAssetNameId = asset.id;
+		} else if (asset.name.startsWith(nameStart) && asset.name.endsWith(nameEnd)) {
+			if (asset.name.endsWith("-" + commitHash + nameEnd)) {
+				filteredAssets.isCurrentCommitAlreadyReleased = true;
+				break;
+			} else {
+				numFound++;
+				if (numFound >= maxReleases) {
+					core.info("Queuing old asset " + asset.name + " for deletion");
+					filteredAssets.toBeDeletedAssetsIds.push(asset.id);
+				}
+			}
+		} else if (regExp && regExp.test(asset.name)) {
+			numFound++;
+			if (numFound >= maxReleases) {
+				core.info("Queuing old asset " + asset.name + " for deletion");
+				filteredAssets.toBeDeletedAssetsIds.push(asset.id);
+			}
+		}
+	}
+
+	return filteredAssets;
+}
+
+async function deleteOldAssets(github, owner, repo, toBeDeletedAssetsIds) {
+	core.info("Deleting " + toBeDeletedAssetsIds.length + " old assets");
+
+	for (let i = 0; i < toBeDeletedAssetsIds.length; i++) {
+		const id = toBeDeletedAssetsIds[i];
+
+		await github.repos.deleteReleaseAsset({
+			owner: owner,
+			repo: repo,
+			asset_id: id
+		});
+	}
+}
+
+async function uploadAsset(github, assetName) {
 	const url = core.getInput("upload_url", { required: true });
 	const assetPath = core.getInput("asset_path", { required: true });
 	const contentType = core.getInput("asset_content_type", { required: true });
@@ -25,88 +94,62 @@ async function uploadAsset(github, name) {
 	const uploadAssetResponse = await github.repos.uploadReleaseAsset({
 		url,
 		headers,
-		name,
+		assetName,
 		file: fs.readFileSync(assetPath)
 	});
 
 	return uploadAssetResponse.data.browser_download_url;
 }
 
+function createDate() {
+	let now = new Date();
+	let date = now.getUTCFullYear().toString() + pad2((now.getUTCMonth() + 1).toString()) + pad2(now.getUTCDate().toString());
+	return date;
+}
+
+function pad2(v) {
+	v = v.toString();
+	while (v.length < 2) v = "0" + v;
+	return v;
+}
+
 async function run() {
 	try {
-		const maxReleases = parseInt(core.getInput("max_releases", { required: false }));
-		const releaseId = core.getInput("release_id", { required: true });
-		let name = core.getInput("asset_name", { required: true });
-		const placeholderStart = name.indexOf("$$");
-		const nameStart = name.substr(0, placeholderStart);
-		const nameEnd = name.substr(placeholderStart + 2);
+		let assetName = core.getInput("asset_name", { required: true });
 
 		const github = new GitHub(process.env.GITHUB_TOKEN);
-		const hash = process.env.GITHUB_SHA.substr(0, 6);
+		const commitHash = process.env.GITHUB_SHA.substr(0, 6);
 		const repository = process.env.GITHUB_REPOSITORY.split('/');
 		const owner = repository[0];
 		const repo = repository[1];
 
 		core.info("Checking previous assets");
-		let assets = await github.repos.listAssetsForRelease({
-			owner: owner,
-			repo: repo,
-			release_id: parseInt(releaseId),
-			per_page: 100
-		});
+		let assets = await listAssetsSortedByDate(github, owner, repo);
 
-		assets.data.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+		let filteredAssets = findToBeDeletedAssets(assets, assetName, commitHash);
 
-		let toDelete = [];
-		let existingAssetNameId = undefined;
-
-		let numFound = 0;
-		for (let i = 0; i < assets.data.length; i++) {
-			const asset = assets.data[i];
-			if (asset.name == name) {
-				// not commit hash or date in filename, always force upload here
-				existingAssetNameId = asset.id;
-			} else if (asset.name.startsWith(nameStart) && asset.name.endsWith(nameEnd)) {
-				if (asset.name.endsWith("-" + hash + nameEnd)) {
-					core.info("Current commit already released, exiting");
-					core.setOutput("uploaded", "no");
-					return;
-				} else {
-					numFound++;
-					if (numFound >= maxReleases) {
-						core.info("Queuing old asset " + asset.name + " for deletion");
-						toDelete.push(asset.id);
-					}
-				}
-			}
+		if (filteredAssets.isCurrentCommitAlreadyReleased) {
+			core.info("Current commit already released, exiting");
+			core.setOutput("uploaded", "no");
+			return;
 		}
 
-		let now = new Date();
-		let date = now.getUTCFullYear().toString() + pad2((now.getUTCMonth() + 1).toString()) + pad2(now.getUTCDate().toString());
+		const date = createDate();
+		const expandedAssetName = assetName.replace("$$", date + "-" + commitHash);
 
-		name = name.replace("$$", date + "-" + hash);
-
-		if (existingAssetNameId !== undefined) {
-			core.info("Deleting old asset of same name first");
+		if (filteredAssets.existingAssetNameId) {
+			core.info("Deleting old asset of the same name at first");
 			await github.repos.deleteReleaseAsset({
 				owner: owner,
 				repo: repo,
-				asset_id: existingAssetNameId
+				asset_id: filteredAssets.existingAssetNameId
 			});
 		}
 
-		core.info("Uploading asset as file " + name);
-		let url = await uploadAsset(github, name);
+		core.info("Uploading asset as file " + expandedAssetName);
+		let url = await uploadAsset(github, expandedAssetName);
 
-		core.info("Deleting " + toDelete.length + " old assets");
-		for (let i = 0; i < toDelete.length; i++) {
-			const id = toDelete[i];
-			await github.repos.deleteReleaseAsset({
-				owner: owner,
-				repo: repo,
-				asset_id: id
-			});
-		}
+		await deleteOldAssets(github, owner, repo, filteredAssets.toBeDeletedAssetsIds);
 
 		core.setOutput("uploaded", "yes");
 		core.setOutput("url", url);
@@ -115,10 +158,5 @@ async function run() {
 	}
 }
 
-function pad2(v) {
-	v = v.toString();
-	while (v.length < 2) v = "0" + v;
-	return v;
-}
 
 run();
