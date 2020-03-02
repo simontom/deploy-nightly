@@ -10,6 +10,8 @@ const fs = require("fs");
 
 
 async function listAssetsSortedByDate(github, owner, repo) {
+	core.info("Listing assets");
+
 	const releaseId = core.getInput("release_id", { required: true });
 
 	let assets = await github.repos.listAssetsForRelease({
@@ -25,6 +27,8 @@ async function listAssetsSortedByDate(github, owner, repo) {
 }
 
 function findToBeDeletedAssets(assets, assetName, commitHash) {
+	core.info("Looking for old assets that can be deleted");
+
 	const maxReleases = parseInt(core.getInput("max_releases", { required: false }));
 	let assetsNamesRegex = core.getInput("assets_names_regex", { required: false });
 	var regExp = assetsNamesRegex && new RegExp(assetsNamesRegex);
@@ -109,6 +113,12 @@ function createDate() {
 	return date;
 }
 
+function expandAssetName(assetName, commitHash) {
+	const date = createDate();
+	const expandedAssetName = assetName.replace("$$", date + "-" + commitHash);
+	return expandedAssetName;
+}
+
 function pad2(v) {
 	v = v.toString();
 	while (v.length < 2) v = "0" + v;
@@ -126,8 +136,8 @@ async function run() {
 		const repo = repository[1];
 
 		core.info("Checking previous assets");
-		let assets = await listAssetsSortedByDate(github, owner, repo);
 
+		let assets = await listAssetsSortedByDate(github, owner, repo);
 		let filteredAssets = findToBeDeletedAssets(assets, assetName, commitHash);
 
 		if (filteredAssets.isCurrentCommitAlreadyReleased) {
@@ -135,9 +145,6 @@ async function run() {
 			core.setOutput("uploaded", "no");
 			return;
 		}
-
-		const date = createDate();
-		const expandedAssetName = assetName.replace("$$", date + "-" + commitHash);
 
 		if (filteredAssets.existingAssetNameId) {
 			core.info("Deleting old asset of the same name at first");
@@ -148,6 +155,7 @@ async function run() {
 			});
 		}
 
+		const expandedAssetName = expandAssetName(assetName, commitHash);
 		let url = await uploadAsset(github, expandedAssetName);
 
 		await deleteOldAssets(github, owner, repo, filteredAssets.toBeDeletedAssetsIds);
