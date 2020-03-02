@@ -83,6 +83,8 @@ async function deleteOldAssets(github, owner, repo, toBeDeletedAssetsIds) {
 }
 
 async function uploadAsset(github, assetName) {
+	core.info("Uploading asset as file " + assetName);
+
 	const url = core.getInput("upload_url", { required: true });
 	const assetPath = core.getInput("asset_path", { required: true });
 	const contentType = core.getInput("asset_content_type", { required: true });
@@ -146,7 +148,6 @@ async function run() {
 			});
 		}
 
-		core.info("Uploading asset as file " + expandedAssetName);
 		let url = await uploadAsset(github, expandedAssetName);
 
 		await deleteOldAssets(github, owner, repo, filteredAssets.toBeDeletedAssetsIds);
