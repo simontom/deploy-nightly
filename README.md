@@ -31,8 +31,8 @@ jobs:
           upload_url: https://uploads.github.com/repos/Pure-D/serve-d/releases/20717582/assets{?name,label} # find out this value by opening https://api.github.com/repos/<owner>/<repo>/releases in your browser and copy the full "upload_url" value including the {?name,label} part
           release_id: 20717582 # same as above (id can just be taken out the upload_url, it's used to find old releases)
           asset_path: ./myapp.zip # path to archive to upload
-          asset_name: build-name-$$.zip # name to upload the release as, use $$ to insert date (YYYYMMDD) and 6 letter commit hash
-		  assets_names_regex: "build-name-v\\d\\.\\d\\.\\d-.+\\.zip" # optional Regex for assets names recognition (this is example of asset name matching used regex - "build-name-v1.2.3.zip")
+          asset_name: build-name-v1.3.1-$$.zip # name to upload the release as, use $$ to insert date (YYYYMMDD) and 6 letter commit hash
+          assets_names_regex: "build-name-v\\d\\.\\d\\.\\d-.+\\.zip" # optional Regex for assets names recognition (this is example of asset name matching used regex - "build-name-v1.2.3.zip")
           asset_content_type: application/zip # required by GitHub API
           max_releases: 7 # optional, if there are more releases than this matching the asset_name, the oldest ones are going to be deleted
 ```
