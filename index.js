@@ -32,9 +32,7 @@ function findToBeDeletedAssets(assets, assetName, commitHash) {
 	const maxReleases = parseInt(core.getInput("max_releases", { required: false }));
 	let assetsNamesRegex = core.getInput("assets_names_regex", { required: false });
 	var regExp = assetsNamesRegex && new RegExp(assetsNamesRegex);
-	core.info("Created RegExp");
-	core.info(assetsNamesRegex);
-	core.info(regExp);
+	core.info("Instantiated RegExp: " + regExp);
 
 	const placeholderStart = assetName.indexOf("$$");
 	const nameStart = assetName.substr(0, placeholderStart);
@@ -52,6 +50,7 @@ function findToBeDeletedAssets(assets, assetName, commitHash) {
 		core.info("Processing asset.name: " + asset.name);
 		if (asset.name == assetName) {
 			// Not allowed to upload already existing name of asset (not commit hash or date in filename)
+			core.info("Queuing old asset " + asset.name + " for deletion (found by the same name as assetName input)");
 			filteredAssets.existingAssetNameId = asset.id;
 		} else if (regExp && regExp.test(asset.name)) {
 			numFound++;
@@ -61,6 +60,7 @@ function findToBeDeletedAssets(assets, assetName, commitHash) {
 			}
 		} else if (asset.name.startsWith(nameStart) && asset.name.endsWith(nameEnd)) {
 			if (asset.name.endsWith("-" + commitHash + nameEnd)) {
+				core.info("Build from current commit with asset.name " + asset.name + " already exists and will not be uploaded again (found by splitting assetName)");
 				filteredAssets.isCurrentCommitAlreadyReleased = true;
 				break;
 			} else {
