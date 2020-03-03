@@ -100,7 +100,7 @@ async function uploadAsset(github, assetName) {
 	const uploadAssetResponse = await github.repos.uploadReleaseAsset({
 		url,
 		headers,
-		assetName,
+		name: assetName,
 		file: fs.readFileSync(assetPath)
 	});
 
