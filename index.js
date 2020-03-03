@@ -21,7 +21,7 @@ async function listAssetsSortedByDate(github, owner, repo) {
 		per_page: 100
 	});
 
-	assets.data.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+	assets.data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
 	return assets;
 }
